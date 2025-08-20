@@ -24,7 +24,10 @@ class NotificationService {
       priority: Priority.defaultPriority,
     );
     const iosDetails = DarwinNotificationDetails();
-    const details = NotificationDetails(android: androidDetails, iOS: iosDetails);
+    const details = NotificationDetails(
+      android: androidDetails,
+      iOS: iosDetails,
+    );
 
     await _plugin.show(
       DateTime.now().millisecondsSinceEpoch.remainder(1 << 31),
@@ -34,4 +37,3 @@ class NotificationService {
     );
   }
 }
-

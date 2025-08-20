@@ -3,6 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'services/notification_service.dart';
 import 'models/todo.dart';
 import 'data/todo_repository.dart';
+import 'package:flutter/services.dart';
 
 const _themeKey = 'selected_theme';
 
@@ -130,13 +131,14 @@ class TodoHome extends StatefulWidget {
 
 class _TodoHomeState extends State<TodoHome> {
   List<Todo> _todos = [];
+  static const _settingsChannel = MethodChannel('app.settings');
 
   @override
   void initState() {
     super.initState();
     _load();
-  // initialize notifications after widget binding
-  NotificationService().init();
+    // initialize notifications after widget binding
+    NotificationService().init();
   }
 
   Future<void> _load() async {
@@ -194,9 +196,77 @@ class _TodoHomeState extends State<TodoHome> {
   Future<void> _toggle(Todo todo) async {
     final updated = todo.copyWith(completed: !todo.completed);
     await widget.repository.updateTodo(updated);
-    // If the task was just marked completed, show a local notification
+    // If the task was just marked completed, ensure permission and show a local notification
     if (!todo.completed && updated.completed) {
-      NotificationService().showTaskCompleted(title: updated.title);
+      // Check permission via platform channel
+      try {
+        final Map status =
+            (await _settingsChannel.invokeMethod('checkNotificationPermission'))
+                as Map;
+        if (!mounted) return;
+        final granted = status['granted'] as bool? ?? true;
+        final shouldShowRationale =
+            status['shouldShowRationale'] as bool? ?? false;
+
+        if (!granted) {
+          // If system will not show rationale (permanent denial), show our dialog with open settings
+          if (!shouldShowRationale) {
+            final open = await showDialog<bool>(
+              context: context,
+              builder: (ctx) => AlertDialog(
+                title: const Text('Enable notifications'),
+                content: const Text(
+                  'We use notifications to let you know when tasks are completed. Please enable notifications in app settings.',
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.of(ctx).pop(false),
+                    child: const Text('Cancel'),
+                  ),
+                  TextButton(
+                    onPressed: () => Navigator.of(ctx).pop(true),
+                    child: const Text('Open settings'),
+                  ),
+                ],
+              ),
+            );
+
+            if (open == true) {
+              try {
+                await _settingsChannel.invokeMethod('openSettings');
+              } on PlatformException catch (e) {
+                if (!mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Could not open settings: ${e.message}'),
+                  ),
+                );
+              }
+              // still try to show notification locally if possible
+              NotificationService().showTaskCompleted(title: updated.title);
+            }
+          } else {
+            // We can still request permission via the platform channel
+            await _settingsChannel.invokeMethod(
+              'requestNotificationPermission',
+            );
+            // After requesting, attempt to show notification (if granted)
+            final Map newStatus =
+                (await _settingsChannel.invokeMethod(
+                      'checkNotificationPermission',
+                    ))
+                    as Map;
+            final newGranted = newStatus['granted'] as bool? ?? true;
+            if (newGranted)
+              NotificationService().showTaskCompleted(title: updated.title);
+          }
+        } else {
+          NotificationService().showTaskCompleted(title: updated.title);
+        }
+      } on PlatformException {
+        // Fallback: show notification anyway
+        NotificationService().showTaskCompleted(title: updated.title);
+      }
     }
     await _load();
   }
