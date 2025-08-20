@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'services/notification_service.dart';
 import 'models/todo.dart';
 import 'data/todo_repository.dart';
 
@@ -134,6 +135,8 @@ class _TodoHomeState extends State<TodoHome> {
   void initState() {
     super.initState();
     _load();
+  // initialize notifications after widget binding
+  NotificationService().init();
   }
 
   Future<void> _load() async {
@@ -191,6 +194,10 @@ class _TodoHomeState extends State<TodoHome> {
   Future<void> _toggle(Todo todo) async {
     final updated = todo.copyWith(completed: !todo.completed);
     await widget.repository.updateTodo(updated);
+    // If the task was just marked completed, show a local notification
+    if (!todo.completed && updated.completed) {
+      NotificationService().showTaskCompleted(title: updated.title);
+    }
     await _load();
   }
 
@@ -265,8 +272,9 @@ class _TodoHomeState extends State<TodoHome> {
                       c.month == today.month &&
                       c.day == today.day;
                 }).toList();
-                if (todays.isEmpty)
+                if (todays.isEmpty) {
                   return const Center(child: Text('No tasks for today.'));
+                }
                 return _buildReorderableList(todays);
               },
             ),
@@ -280,8 +288,9 @@ class _TodoHomeState extends State<TodoHome> {
                       c.month == today.month &&
                       c.day == today.day);
                 }).toList();
-                if (others.isEmpty)
+                if (others.isEmpty) {
                   return const Center(child: Text('No recent activity.'));
+                }
                 return _buildReorderableList(others);
               },
             ),
